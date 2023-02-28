@@ -16,6 +16,9 @@ library(janitor)
 library(writexl)
 library(knitr)
 library(kableExtra)
+library(reshape2)
+library(igraph)
+library(RColorBrewer)
 ```
 
 ## Bob Ross Paintings
@@ -24,6 +27,7 @@ library(kableExtra)
 
 
 ```{r}
+rm(list=ls())
 ## https://db.rstudio.com/databases/microsoft-sql-server/
 con <- DBI::dbConnect(odbc::odbc(), 
                       Driver = "SQL Server", 
@@ -33,7 +37,7 @@ con <- DBI::dbConnect(odbc::odbc(),
 
 # dbListTables(con)
 ```
-```{r cars}
+```{r }
 bob_ross <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-02-21/bob_ross.csv') %>%
   janitor::clean_names() %>%
  select(-img_src,- youtube_src, - color_hex, - painting_index)
@@ -81,7 +85,8 @@ colors <-  br_cleaner %>%
   group_by(color) %>%
   summarize(count = n()) %>%
   arrange(desc(count)) %>% drop_na()
-
+```
+```{r}
 colors %>%
   ggplot(aes(x = reorder(color, count), y = count)) +
   geom_col(fill = "green") +
@@ -124,7 +129,8 @@ cor_data <- cor_matrix %>%
   as.data.frame() %>%
   rownames_to_column("variable1") %>%
   pivot_longer(-variable1, names_to = "variable2", values_to = "correlation")
-
+```
+```{r}
 # Plot the correlation matrix as a heatmap
 ggplot(cor_data, aes(x = variable1, y = variable2, fill = correlation)) +
   geom_tile() +
@@ -135,6 +141,7 @@ ggplot(cor_data, aes(x = variable1, y = variable2, fill = correlation)) +
 
 ```
 ```{r}
+cor_df <- as.data.frame(cor_matrix)
 cor_table <- kable(cor_df, digits = 3, caption = "Correlation Matrix for Bob Ross Painting Data") %>%
   kable_styling(bootstrap_options = c("striped", "hover"), 
                 full_width = FALSE, 
@@ -174,3 +181,95 @@ ggplot(br_cleaner, aes(x = season, y = num_colors, fill = season)) +
 
 
 ```
+
+```{r}
+# Extract correlation matrix
+cor_matrix <- cor(numeric_data[,4:ncol(numeric_data)])
+
+# Loop over each color and extract highest correlated color
+for (i in 1:ncol(cor_matrix)) {
+  corr_vals <- cor_matrix[,i]
+  abs_corr_vals <- abs(corr_vals)
+  max_corr_index <- which.max(abs_corr_vals)
+  max_corr_color <- colnames(cor_matrix)[max_corr_index]
+  print(paste0("Color ", colnames(cor_matrix)[i], " is most correlated with color ", max_corr_color))
+}
+
+```
+
+```{r}
+# # Calculate the correlations
+# cor_df <- numeric_data %>%
+#   select(-c(1:3)) %>%  # Remove non-color columns
+#   cor(use = "pairwise.complete.obs") %>%  # Calculate correlations
+#   as.data.frame() %>%  # Convert to data frame
+#   rownames_to_column(var = "color1") %>%  # Convert row names to a column
+#   gather(key = "color2", value = "correlation", -color1) %>%  # Convert to long format
+# 
+# # Filter for correlations above a certain threshold
+# cor_threshold <- 0.7
+# high_correlations <- cor_df %>%
+#   filter(abs(correlation) > cor_threshold)
+# 
+# # Save the high correlations to a data frame
+# high_correlations_df <- high_correlations %>%
+#   arrange(desc(abs(correlation)))
+# 
+# # View the first few rows of the high correlations data frame
+# head(high_correlations_df)
+
+```
+
+```{r}
+
+# Convert the correlation matrix to a long format dataframe
+melted_df <- melt(cor_df)
+
+# Plot the heatmap
+ggplot(melted_df, aes(Var1, Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient(low = "#F0FFFF", high = "#8B0000") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+```{r}
+# Create an edge list from the correlation matrix
+edges <- data.frame(expand.grid(rownames(cor_df), rownames(cor_df)))
+edges$cor <- as.vector(cor_df)
+
+# Filter out the self-edges
+edges <- edges[edges$Var1 != edges$Var2, ]
+
+# Create a graph from the edge list
+g <- graph_from_data_frame(edges, directed = FALSE)
+
+# Plot the graph using Fruchterman-Reingold layout
+plot(g, layout = layout.fruchterman.reingold(g), edge.width = abs(E(g)$cor) * 5, edge.color = ifelse(E(g)$cor > 0, "blue", "red"))
+
+
+```
+
+```{r}
+# Load necessary libraries
+
+# Calculate the average number of colors used for each season
+avg_colors_by_season <- br_cleaner %>%
+  group_by(season) %>%
+  summarize(avg_colors = mean(num_colors))
+
+# Create the bar chart
+ggplot(avg_colors_by_season, aes(x = season, y = avg_colors, fill = season)) +
+  geom_col() +
+  labs(x = "Season", y = "Average Number of Colors Used") +
+  theme_minimal()
+
+
+```
+
+
+
+
+
